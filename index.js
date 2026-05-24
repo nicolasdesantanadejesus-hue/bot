@@ -9,16 +9,6 @@ const P = require("pino");
 const fs = require("fs");
 const axios = require("axios");
 const yts = require("yt-search");
-const express = require("express");
-const app = express();
-
-app.get("/", (req, res) => {
-  res.send("SANTANA BOT ONLINE");
-});
-
-app.listen(process.env.PORT || 3000, () => {
-  console.log("🌐 WEB ONLINE");
-});
 
 const RAPIDAPI_KEY = "b8b7b39029msh1305aa17e245991p1dc47ajsn5b5e84453827";
 
@@ -91,38 +81,33 @@ function getQuoted(msg) {
   };
 }
 
-async function iniciarBot() {
-  const { state, saveCreds } = await useMultiFileAuthState("sessao");
+const sock = makeWASocket({
+  auth: state,
+  logger: P({ level: "silent" }),
+  browser: ["SANTANA BOT", "Chrome", "1.0"],
+  printQRInTerminal: false
+});
 
-  const sock = makeWASocket({
-    auth: state,
-    logger: P({ level: "silent" }),
-    browser: ["SANTANA BOT", "Chrome", "1.0"]
-  });
+if (!sock.authState.creds.registered) {
+  const numero = "5571996355153";
+  const code = await sock.requestPairingCode(numero);
 
-  sock.ev.on("creds.update", saveCreds);
+  console.log("CÓDIGO DO BOT:", code);
+}
+// AQUI EMBAIXO 👇
+if (!sock.authState.creds.registered) {
 
-  sock.ev.on("connection.update", update => {
-    const { connection, qr, lastDisconnect } = update;
+  const numero = "557199125198";
 
-    if (qr) {
-      console.log("📱 Escaneie o QR:");
-      qrcode.generate(qr, { small: true });
-    }
+  const code = await sock.requestPairingCode(numero);
 
-    if (connection === "open") {
-      console.log("✅ SANTANA BOT ONLINE!");
-    }
-
-    if (connection === "close") {
-      const code = lastDisconnect?.error?.output?.statusCode;
-      console.log("❌ Conexão fechada:", code);
-
-      if (code !== DisconnectReason.loggedOut) {
-        iniciarBot();
-      }
-    }
-  });
+  console.log(`
+╔════════════════════╗
+   CÓDIGO DO BOT
+      ${code}
+╚════════════════════╝
+`);
+}
 
   sock.ev.on("messages.upsert", async ({ messages }) => {
     try {
@@ -534,37 +519,23 @@ ${link}
         return;
       }
 
-// PLAY LIBERADO PARA MEMBROS
+      // PLAY LIBERADO PARA MEMBROS
 if (texto.toLowerCase().startsWith(",play ")) {
   const pesquisa = texto.slice(6).trim();
 
-  if (!pesquisa) {
-    await sock.sendMessage(jid, {
-      text: "❌ Use: ,play nome da música"
-    });
-    return;
-  }
+  if (!pesquisa) return reagir("❌");
 
   try {
-    await reagir("🎵");
-
     const resultado = await yts(pesquisa);
     const video = resultado.videos[0];
 
-    if (!video) {
-      await sock.sendMessage(jid, {
-        text: "❌ Música não encontrada."
-      });
-
-      return;
-    }
+    if (!video) return reagir("❌");
 
     await sock.sendMessage(jid, {
       text:
 `🎵 BAIXANDO ÁUDIO...
 
-📌 ${video.title}
-⏱️ ${video.timestamp}`
+🎧 ${video.title}`
     });
 
     const resposta = await axios.get(
@@ -582,9 +553,10 @@ if (texto.toLowerCase().startsWith(",play ")) {
 
     if (!audioUrl) {
       await sock.sendMessage(jid, {
-        text: "❌ API não retornou áudio."
+        text: "❌ API de áudio indisponível no momento."
       });
 
+      await reagir("❌");
       return;
     }
 
@@ -605,25 +577,14 @@ if (texto.toLowerCase().startsWith(",play ")) {
     });
 
     await reagir("✅");
-
   } catch (e) {
-
-    const erro =
-      Buffer.isBuffer(e.response?.data)
-        ? e.response.data.toString()
-        : e.response?.data || e.message;
-
-    console.log("ERRO PLAY:", erro);
+    console.log("ERRO PLAY:", e.response?.data || e.message);
 
     await sock.sendMessage(jid, {
       text:
 `❌ Erro ao baixar música.
 
-Motivos possíveis:
-- API caiu
-- Link expirou
-- Música bloqueada
-- RapidAPI sem assinatura`
+A API pode estar bloqueando o áudio ou o link expirou.`
     });
 
     await reagir("❌");
