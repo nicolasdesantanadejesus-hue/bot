@@ -534,23 +534,37 @@ ${link}
         return;
       }
 
-      // PLAY LIBERADO PARA MEMBROS
+// PLAY LIBERADO PARA MEMBROS
 if (texto.toLowerCase().startsWith(",play ")) {
   const pesquisa = texto.slice(6).trim();
 
-  if (!pesquisa) return reagir("❌");
+  if (!pesquisa) {
+    await sock.sendMessage(jid, {
+      text: "❌ Use: ,play nome da música"
+    });
+    return;
+  }
 
   try {
+    await reagir("🎵");
+
     const resultado = await yts(pesquisa);
     const video = resultado.videos[0];
 
-    if (!video) return reagir("❌");
+    if (!video) {
+      await sock.sendMessage(jid, {
+        text: "❌ Música não encontrada."
+      });
+
+      return;
+    }
 
     await sock.sendMessage(jid, {
       text:
 `🎵 BAIXANDO ÁUDIO...
 
-🎧 ${video.title}`
+📌 ${video.title}
+⏱️ ${video.timestamp}`
     });
 
     const resposta = await axios.get(
@@ -568,10 +582,9 @@ if (texto.toLowerCase().startsWith(",play ")) {
 
     if (!audioUrl) {
       await sock.sendMessage(jid, {
-        text: "❌ API de áudio indisponível no momento."
+        text: "❌ API não retornou áudio."
       });
 
-      await reagir("❌");
       return;
     }
 
@@ -592,14 +605,25 @@ if (texto.toLowerCase().startsWith(",play ")) {
     });
 
     await reagir("✅");
+
   } catch (e) {
-    console.log("ERRO PLAY:", e.response?.data || e.message);
+
+    const erro =
+      Buffer.isBuffer(e.response?.data)
+        ? e.response.data.toString()
+        : e.response?.data || e.message;
+
+    console.log("ERRO PLAY:", erro);
 
     await sock.sendMessage(jid, {
       text:
 `❌ Erro ao baixar música.
 
-A API pode estar bloqueando o áudio ou o link expirou.`
+Motivos possíveis:
+- API caiu
+- Link expirou
+- Música bloqueada
+- RapidAPI sem assinatura`
     });
 
     await reagir("❌");
