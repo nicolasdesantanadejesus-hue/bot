@@ -5,14 +5,27 @@ const {
   downloadMediaMessage
 } = require("@whiskeysockets/baileys");
 
-const { Sticker, StickerTypes } = require("wa-sticker-formatter");
-const qrcode = require("qrcode-terminal");
+const express = require("express");
 const P = require("pino");
 const fs = require("fs");
 const axios = require("axios");
 const yts = require("yt-search");
 
-const RAPIDAPI_KEY = "b8b7b39029msh1305aa17e245991p1dc47ajsn5b5e84453827";
+const app = express();
+
+app.get("/", (req, res) => {
+  res.send("SANTANA BOT ONLINE");
+});
+
+app.listen(process.env.PORT || 3000, () => {
+  console.log("🌐 WEB ONLINE");
+});
+
+const RAPIDAPI_KEY =
+  process.env.RAPIDAPI_KEY ||
+  "b8b7b39029msh1305aa17e245991p1dc47ajsn5b5e84453827";
+
+const NUMERO_PAIRING = "5571996355153";
 
 const GRUPOS_PERMITIDOS = [
   "Os cria",
@@ -89,46 +102,52 @@ async function iniciarBot() {
   const sock = makeWASocket({
     auth: state,
     logger: P({ level: "silent" }),
-    browser: ["SANTANA BOT", "Chrome", "1.0"]
+    browser: ["SANTANA BOT", "Chrome", "1.0"],
+    printQRInTerminal: false
   });
+
+  let pairingRequested = false;
 
   sock.ev.on("creds.update", saveCreds);
 
   sock.ev.on("connection.update", async update => {
-  const { connection, qr, lastDisconnect } = update;
+    const { connection, qr, lastDisconnect } = update;
 
-  if (qr) {
-    console.log("📱 QR gerado, mas use o código de pareamento.");
-  }
+    if (qr) {
+      console.log("📱 QR gerado, mas use o código de pareamento.");
+    }
 
-  if (connection === "connecting") {
-    if (!sock.authState.creds.registered) {
-      try {
-        const numero = "5571996355153";
-        const code = await sock.requestPairingCode(numero);
+    if (connection === "connecting") {
+      if (!sock.authState.creds.registered && !pairingRequested) {
+        pairingRequested = true;
 
-        console.log("================================");
-        console.log("CÓDIGO DO BOT:", code);
-        console.log("================================");
-      } catch (e) {
-        console.log("ERRO PAIRING:", e.message);
+        try {
+          const code = await sock.requestPairingCode(NUMERO_PAIRING);
+
+          console.log("================================");
+          console.log("CÓDIGO DO BOT:", code);
+          console.log("================================");
+        } catch (e) {
+          console.log("ERRO PAIRING:", e.message);
+        }
       }
     }
-  }
 
-  if (connection === "open") {
-    console.log("✅ SANTANA BOT ONLINE!");
-  }
-
-  if (connection === "close") {
-    const code = lastDisconnect?.error?.output?.statusCode;
-    console.log("❌ Conexão fechada:", code);
-
-    if (code !== DisconnectReason.loggedOut) {
-      iniciarBot();
+    if (connection === "open") {
+      console.log("✅ SANTANA BOT ONLINE!");
     }
-  }
-});
+
+    if (connection === "close") {
+      const code = lastDisconnect?.error?.output?.statusCode;
+      console.log("❌ Conexão fechada:", code);
+
+      if (code !== DisconnectReason.loggedOut) {
+        setTimeout(() => {
+          iniciarBot();
+        }, 5000);
+      }
+    }
+  });
 
   sock.ev.on("messages.upsert", async ({ messages }) => {
     try {
@@ -256,69 +275,6 @@ async function iniciarBot() {
         }
 
         await reagir("✅");
-        return;
-      }
-
-      if (comando === ",fig" || comando === "fig" || comando === ",sticker") {
-        const quoted = getQuoted(msg);
-
-        if (!quoted) return reagir("❌");
-
-        const q = quoted.message;
-
-        if (q.imageMessage) {
-          try {
-            const buffer = await downloadMediaMessage(quoted, "buffer", {});
-
-            const sticker = new Sticker(buffer, {
-              pack: "SANTANA BOT",
-              author: "X4",
-              type: StickerTypes.FULL,
-              quality: 100
-            });
-
-            const stickerBuffer = await sticker.toBuffer();
-
-            await sock.sendMessage(jid, {
-              sticker: stickerBuffer
-            });
-
-            await reagir("✅");
-          } catch (e) {
-            console.log("ERRO FIG IMAGEM:", e);
-            await reagir("❌");
-          }
-
-          return;
-        }
-
-        if (q.videoMessage && q.videoMessage.seconds <= 10) {
-          try {
-            const buffer = await downloadMediaMessage(quoted, "buffer", {});
-
-            const sticker = new Sticker(buffer, {
-              pack: "SANTANA BOT",
-              author: "X4",
-              type: StickerTypes.FULL,
-              quality: 100
-            });
-
-            const stickerBuffer = await sticker.toBuffer();
-
-            await sock.sendMessage(jid, {
-              sticker: stickerBuffer
-            });
-
-            await reagir("✅");
-          } catch (e) {
-            console.log("ERRO FIG VIDEO:", e);
-            await reagir("❌");
-          }
-
-          return;
-        }
-
-        await reagir("❌");
         return;
       }
 
@@ -540,23 +496,36 @@ ${link}
         return;
       }
 
-      // PLAY LIBERADO PARA MEMBROS
       if (texto.toLowerCase().startsWith(",play ")) {
         const pesquisa = texto.slice(6).trim();
 
-        if (!pesquisa) return reagir("❌");
+        if (!pesquisa) {
+          await sock.sendMessage(jid, {
+            text: "❌ Use: ,play nome da música"
+          });
+          return;
+        }
 
         try {
+          await reagir("🎵");
+
           const resultado = await yts(pesquisa);
           const video = resultado.videos[0];
 
-          if (!video) return reagir("❌");
+          if (!video) {
+            await sock.sendMessage(jid, {
+              text: "❌ Música não encontrada."
+            });
+
+            return;
+          }
 
           await sock.sendMessage(jid, {
             text:
 `🎵 BAIXANDO ÁUDIO...
 
-🎧 ${video.title}`
+📌 ${video.title}
+⏱️ ${video.timestamp}`
           });
 
           const resposta = await axios.get(
@@ -574,31 +543,47 @@ ${link}
 
           if (!audioUrl) {
             await sock.sendMessage(jid, {
-              text: "❌ API de áudio indisponível no momento."
+              text: "❌ API não retornou áudio."
             });
 
-            await reagir("❌");
             return;
           }
 
+          const audioData = await axios.get(audioUrl, {
+            responseType: "arraybuffer",
+            headers: {
+              "User-Agent": "Mozilla/5.0"
+            }
+          });
+
+          const audioBuffer = Buffer.from(audioData.data);
+
           await sock.sendMessage(jid, {
-            audio: {
-              url: audioUrl
-            },
+            audio: audioBuffer,
             mimetype: "audio/mpeg",
             ptt: false,
             fileName: `${video.title}.mp3`
           });
 
           await reagir("✅");
+
         } catch (e) {
-          console.log("ERRO PLAY:", e.response?.data || e.message);
+          const erro =
+            Buffer.isBuffer(e.response?.data)
+              ? e.response.data.toString()
+              : e.response?.data || e.message;
+
+          console.log("ERRO PLAY:", erro);
 
           await sock.sendMessage(jid, {
             text:
 `❌ Erro ao baixar música.
 
-Se aparecer "You are not subscribed to this API", sua RapidAPI não está liberada.`
+Motivos possíveis:
+- API caiu
+- Link expirou
+- Música bloqueada
+- RapidAPI sem assinatura`
           });
 
           await reagir("❌");
@@ -607,7 +592,6 @@ Se aparecer "You are not subscribed to this API", sua RapidAPI não está libera
         return;
       }
 
-      // TIKTOK LIBERADO PARA MEMBROS
       if (
         texto.toLowerCase().startsWith(",tiktok ") ||
         texto.toLowerCase().startsWith(",tt ")
@@ -655,44 +639,77 @@ Se aparecer "You are not subscribed to this API", sua RapidAPI não está libera
         return;
       }
 
-// ADD MEMBRO
-if (texto.toLowerCase().startsWith(",add ")) {
-  if (!isAdmin) return reagir("❌");
+      if (texto.toLowerCase().startsWith(",add ")) {
+        if (!isAdmin) return reagir("❌");
 
-  const numero = texto
-    .replace(",add", "")
-    .replace(/\D/g, "")
-    .trim();
+        let numero = texto
+          .replace(",add", "")
+          .replace(/\D/g, "")
+          .trim();
 
-  if (!numero) {
-    await sock.sendMessage(jid, {
-      text: "❌ Use assim: ,add 5571999999999"
-    });
-    return;
-  }
+        if (!numero) {
+          await sock.sendMessage(jid, {
+            text: "❌ Use assim: ,add 5571999999999"
+          });
+          return;
+        }
 
-  const alvo = numero + "@s.whatsapp.net";
+        if (!numero.startsWith("55")) {
+          numero = "55" + numero;
+        }
 
-  try {
-    await sock.groupParticipantsUpdate(jid, [alvo], "add");
+        const alvo = numero + "@s.whatsapp.net";
 
-    await sock.sendMessage(jid, {
-      text: `✅ Membro adicionado: ${numero}`
-    });
+        try {
+          await sock.groupParticipantsUpdate(jid, [alvo], "add");
 
-    await reagir("✅");
-  } catch (e) {
-    console.log("ERRO ADD:", e);
+          await sock.sendMessage(jid, {
+            text: `✅ Membro adicionado: ${numero}`
+          });
 
-    await sock.sendMessage(jid, {
-      text: "❌ Não consegui adicionar. A pessoa pode ter privacidade ativada ou o número está errado."
-    });
+          await reagir("✅");
+        } catch (e) {
+          console.log("ERRO ADD:", e?.output || e);
 
-    await reagir("❌");
-  }
+          try {
+            const codigo = await sock.groupInviteCode(jid);
+            const link = `https://chat.whatsapp.com/${codigo}`;
 
-  return;
-}
+            await sock.sendMessage(alvo, {
+              text:
+`👋 Você foi convidado para entrar no grupo:
+
+${link}`
+            });
+
+            await sock.sendMessage(jid, {
+              text:
+`⚠️ Não consegui adicionar direto.
+
+✅ Enviei o link no privado para:
+${numero}`
+            });
+
+            await reagir("✅");
+          } catch (err) {
+            console.log("ERRO ENVIAR LINK:", err);
+
+            await sock.sendMessage(jid, {
+              text:
+`❌ Não consegui adicionar nem enviar o link.
+
+Verifique:
+- número correto
+- bot é admin
+- pessoa permite receber mensagem`
+            });
+
+            await reagir("❌");
+          }
+        }
+
+        return;
+      }
 
       if (comando === ",menuadm") {
         if (!isAdmin) return reagir("❌");
@@ -705,11 +722,12 @@ if (texto.toLowerCase().startsWith(",add ")) {
 🔒 f / ,f
 
 📢 t / totag
-🖼️ ,fig
 
 🎵 ,play nome da música
 📥 ,tiktok link
 📥 ,tt link
+
+➕ ,add número
 
 🚫 ,ban
 📥 ,aceitar
