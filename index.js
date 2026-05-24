@@ -9,6 +9,16 @@ const P = require("pino");
 const fs = require("fs");
 const axios = require("axios");
 const yts = require("yt-search");
+const express = require("express");
+const app = express();
+
+app.get("/", (req, res) => {
+  res.send("SANTANA BOT ONLINE");
+});
+
+app.listen(process.env.PORT || 3000, () => {
+  console.log("🌐 WEB ONLINE");
+});
 
 const RAPIDAPI_KEY = "b8b7b39029msh1305aa17e245991p1dc47ajsn5b5e84453827";
 
@@ -525,71 +535,78 @@ ${link}
       }
 
       // PLAY LIBERADO PARA MEMBROS
-      if (texto.toLowerCase().startsWith(",play ")) {
-        const pesquisa = texto.slice(6).trim();
+if (texto.toLowerCase().startsWith(",play ")) {
+  const pesquisa = texto.slice(6).trim();
 
-        if (!pesquisa) return reagir("❌");
+  if (!pesquisa) return reagir("❌");
 
-        try {
-          const resultado = await yts(pesquisa);
-          const video = resultado.videos[0];
+  try {
+    const resultado = await yts(pesquisa);
+    const video = resultado.videos[0];
 
-          if (!video) return reagir("❌");
+    if (!video) return reagir("❌");
 
-          await sock.sendMessage(jid, {
-            text:
+    await sock.sendMessage(jid, {
+      text:
 `🎵 BAIXANDO ÁUDIO...
 
 🎧 ${video.title}`
-          });
+    });
 
-          const resposta = await axios.get(
-            `https://youtube-mp36.p.rapidapi.com/dl?id=${video.videoId}`,
-            {
-              headers: {
-                "Content-Type": "application/json",
-                "x-rapidapi-host": "youtube-mp36.p.rapidapi.com",
-                "x-rapidapi-key": RAPIDAPI_KEY
-              }
-            }
-          );
+    const resposta = await axios.get(
+      `https://youtube-mp36.p.rapidapi.com/dl?id=${video.videoId}`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "x-rapidapi-host": "youtube-mp36.p.rapidapi.com",
+          "x-rapidapi-key": RAPIDAPI_KEY
+        }
+      }
+    );
 
-          const audioUrl = resposta.data?.link;
+    const audioUrl = resposta.data?.link;
 
-          if (!audioUrl) {
-            await sock.sendMessage(jid, {
-              text: "❌ API de áudio indisponível no momento."
-            });
+    if (!audioUrl) {
+      await sock.sendMessage(jid, {
+        text: "❌ API de áudio indisponível no momento."
+      });
 
-            await reagir("❌");
-            return;
-          }
+      await reagir("❌");
+      return;
+    }
 
-          await sock.sendMessage(jid, {
-            audio: {
-              url: audioUrl
-            },
-            mimetype: "audio/mpeg",
-            ptt: false,
-            fileName: `${video.title}.mp3`
-          });
+    const audioData = await axios.get(audioUrl, {
+      responseType: "arraybuffer",
+      headers: {
+        "User-Agent": "Mozilla/5.0"
+      }
+    });
 
-          await reagir("✅");
-        } catch (e) {
-          console.log("ERRO PLAY:", e.response?.data || e.message);
+    const audioBuffer = Buffer.from(audioData.data);
 
-          await sock.sendMessage(jid, {
-            text:
+    await sock.sendMessage(jid, {
+      audio: audioBuffer,
+      mimetype: "audio/mpeg",
+      ptt: false,
+      fileName: `${video.title}.mp3`
+    });
+
+    await reagir("✅");
+  } catch (e) {
+    console.log("ERRO PLAY:", e.response?.data || e.message);
+
+    await sock.sendMessage(jid, {
+      text:
 `❌ Erro ao baixar música.
 
-Se aparecer "You are not subscribed to this API", sua RapidAPI não está liberada.`
-          });
+A API pode estar bloqueando o áudio ou o link expirou.`
+    });
 
-          await reagir("❌");
-        }
+    await reagir("❌");
+  }
 
-        return;
-      }
+  return;
+}
 
       // TIKTOK LIBERADO PARA MEMBROS
       if (
