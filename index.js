@@ -267,7 +267,7 @@ ${video.timestamp}
               headers: {
                 "Content-Type": "application/json",
                 "x-rapidapi-host": "youtube-mp36.p.rapidapi.com",
-                "x-rapidapi-key": RAPIDAPI_KEY
+                "x-rapidapi-key": "b8b7b39029msh1305aa17e245991p1dc47ajsn5b5e84453827"
               }
             }
           );
