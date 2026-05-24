@@ -5,6 +5,7 @@ const {
   downloadMediaMessage
 } = require("@whiskeysockets/baileys");
 
+const qrcode = require("qrcode-terminal");
 const express = require("express");
 const P = require("pino");
 const fs = require("fs");
@@ -21,8 +22,8 @@ app.listen(process.env.PORT || 3000, () => {
   console.log("🌐 WEB ONLINE");
 });
 
-const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || "SUA_KEY_AQUI";
-const NUMERO_PAIRING = "5571996355153";
+const RAPIDAPI_KEY =
+  process.env.RAPIDAPI_KEY || "SUA_KEY_AQUI";
 
 const GRUPOS_PERMITIDOS = [
   "Os cria",
@@ -33,8 +34,12 @@ const DB_FILE = "./database.json";
 
 function carregarDB() {
   if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(DB_FILE, JSON.stringify({ adv: {} }, null, 2));
+    fs.writeFileSync(
+      DB_FILE,
+      JSON.stringify({ adv: {} }, null, 2)
+    );
   }
+
   return JSON.parse(fs.readFileSync(DB_FILE));
 }
 
@@ -52,30 +57,10 @@ function textoMsg(msg) {
   ).trim();
 }
 
-function temLinkOuStatus(texto, msg) {
-  const t = texto.toLowerCase();
-
-  const linkLiberado =
-    t.includes("tiktok.com") ||
-    t.includes("vm.tiktok.com") ||
-    t.includes("vt.tiktok.com") ||
-    t.includes("instagram.com") ||
-    t.includes("instagr.am");
-
-  const temLink =
-    /(https?:\/\/|www\.|[a-z0-9-]+\.[a-z]{2,})(\/\S*)?/i.test(texto);
-
-  const temMencaoStatus =
-    msg.message?.groupStatusMentionMessage ||
-    msg.message?.statusMentionMessage ||
-    msg.message?.protocolMessage?.type === 25;
-
-  if (linkLiberado) return temMencaoStatus;
-  return temLink || temMencaoStatus;
-}
-
 function getQuoted(msg) {
-  const ctx = msg.message?.extendedTextMessage?.contextInfo;
+  const ctx =
+    msg.message?.extendedTextMessage?.contextInfo;
+
   if (!ctx?.quotedMessage) return null;
 
   return {
@@ -91,40 +76,28 @@ function getQuoted(msg) {
 }
 
 async function iniciarBot() {
-  const { state, saveCreds } = await useMultiFileAuthState("sessao");
+  const { state, saveCreds } =
+    await useMultiFileAuthState("sessao");
 
   const sock = makeWASocket({
     auth: state,
     logger: P({ level: "silent" }),
     browser: ["SANTANA BOT", "Chrome", "1.0"],
-    printQRInTerminal: false
+    printQRInTerminal: true
   });
-
-  let pairingRequested = false;
 
   sock.ev.on("creds.update", saveCreds);
 
   sock.ev.on("connection.update", async update => {
-    const { connection, lastDisconnect } = update;
+    const { connection, qr, lastDisconnect } = update;
+
+    if (qr) {
+      console.log("📱 ESCANEIE O QR ABAIXO:\n");
+      qrcode.generate(qr, { small: true });
+    }
 
     if (connection === "connecting") {
       console.log("🔄 CONECTANDO...");
-
-      if (!sock.authState.creds.registered && !pairingRequested) {
-        pairingRequested = true;
-
-        setTimeout(async () => {
-          try {
-            const code = await sock.requestPairingCode(NUMERO_PAIRING);
-
-            console.log("================================");
-            console.log("CÓDIGO DO BOT:", code);
-            console.log("================================");
-          } catch (e) {
-            console.log("ERRO PAIRING:", e.message);
-          }
-        }, 3000);
-      }
     }
 
     if (connection === "open") {
@@ -132,13 +105,15 @@ async function iniciarBot() {
     }
 
     if (connection === "close") {
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      const statusCode =
+        lastDisconnect?.error?.output?.statusCode;
+
       console.log("❌ Conexão fechada:", statusCode);
 
-      if (statusCode !== 428 && statusCode !== 401 && statusCode !== DisconnectReason.loggedOut) {
+      if (statusCode !== DisconnectReason.loggedOut) {
         setTimeout(() => {
           iniciarBot();
-        }, 10000);
+        }, 15000);
       }
     }
   });
@@ -146,28 +121,41 @@ async function iniciarBot() {
   sock.ev.on("messages.upsert", async ({ messages }) => {
     try {
       const msg = messages[0];
+
       if (!msg.message) return;
 
       const jid = msg.key.remoteJid;
+
       if (!jid.endsWith("@g.us")) return;
 
       const sender = msg.key.participant || jid;
+
       const texto = textoMsg(msg);
-      const comando = texto.split(" ")[0].toLowerCase();
+
+      const comando = texto
+        .split(" ")[0]
+        .toLowerCase();
 
       const meta = await sock.groupMetadata(jid);
-      const nomeGrupo = meta.subject.trim().toLowerCase();
 
-      const gruposPermitidos = GRUPOS_PERMITIDOS.map(g =>
-        g.trim().toLowerCase()
-      );
+      const nomeGrupo =
+        meta.subject.trim().toLowerCase();
 
-      if (!gruposPermitidos.includes(nomeGrupo)) return;
+      const gruposPermitidos =
+        GRUPOS_PERMITIDOS.map(g =>
+          g.trim().toLowerCase()
+        );
+
+      if (!gruposPermitidos.includes(nomeGrupo))
+        return;
 
       const participants = meta.participants;
+
       const mentions = participants.map(p => p.id);
 
-      const membro = participants.find(p => p.id === sender);
+      const membro = participants.find(
+        p => p.id === sender
+      );
 
       const isAdmin =
         membro?.admin === "admin" ||
@@ -182,38 +170,34 @@ async function iniciarBot() {
         });
       };
 
-      if (temLinkOuStatus(texto, msg)) {
-        if (!isAdmin) {
-          await sock.sendMessage(jid, {
-            text: "🚫 Link ou menção de status detectado."
-          });
-
-          try {
-            await sock.sendMessage(jid, {
-              delete: msg.key
-            });
-          } catch {}
-
-          await reagir("🚫");
-          return;
-        }
-      }
-
       if (comando === "a" || comando === ",a") {
         if (!isAdmin) return reagir("❌");
-        await sock.groupSettingUpdate(jid, "not_announcement");
+
+        await sock.groupSettingUpdate(
+          jid,
+          "not_announcement"
+        );
+
         await reagir("✅");
         return;
       }
 
       if (comando === "f" || comando === ",f") {
         if (!isAdmin) return reagir("❌");
-        await sock.groupSettingUpdate(jid, "announcement");
+
+        await sock.groupSettingUpdate(
+          jid,
+          "announcement"
+        );
+
         await reagir("✅");
         return;
       }
 
-      if (comando === "t" || comando === "totag" || comando === "t+totag") {
+      if (
+        comando === "t" ||
+        comando === "totag"
+      ) {
         if (!isAdmin) return reagir("❌");
 
         const quoted = getQuoted(msg);
@@ -224,273 +208,47 @@ async function iniciarBot() {
             mentions
           });
 
-          await reagir("✅");
           return;
         }
 
         const q = quoted.message;
 
-        if (q.conversation || q.extendedTextMessage) {
-          const txt = q.conversation || q.extendedTextMessage.text || "";
+        if (
+          q.conversation ||
+          q.extendedTextMessage
+        ) {
+          const txt =
+            q.conversation ||
+            q.extendedTextMessage.text ||
+            "";
 
           await sock.sendMessage(jid, {
             text: txt,
             mentions
           });
-        } else if (q.imageMessage) {
-          const buffer = await downloadMediaMessage(quoted, "buffer", {});
-
-          await sock.sendMessage(jid, {
-            image: buffer,
-            caption: q.imageMessage.caption || "",
-            mentions
-          });
-        } else if (q.videoMessage) {
-          const buffer = await downloadMediaMessage(quoted, "buffer", {});
-
-          await sock.sendMessage(jid, {
-            video: buffer,
-            caption: q.videoMessage.caption || "",
-            mentions
-          });
-        } else if (q.audioMessage) {
-          const buffer = await downloadMediaMessage(quoted, "buffer", {});
-
-          await sock.sendMessage(jid, {
-            audio: buffer,
-            mimetype: "audio/mp4",
-            ptt: q.audioMessage.ptt || false,
-            mentions
-          });
         }
 
         await reagir("✅");
-        return;
-      }
-
-      if (comando.startsWith(",ban")) {
-        if (!isAdmin) return reagir("❌");
-
-        const quoted = getQuoted(msg);
-        let alvo = quoted?.participant;
-
-        if (!alvo && msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.length) {
-          alvo = msg.message.extendedTextMessage.contextInfo.mentionedJid[0];
-        }
-
-        if (!alvo) return reagir("❌");
-
-        await sock.groupParticipantsUpdate(jid, [alvo], "remove");
-        await reagir("✅");
-        return;
-      }
-
-      if (comando === ",aceitar") {
-        if (!isAdmin) return reagir("❌");
-
-        try {
-          const pedidos = await sock.groupRequestParticipantsList(jid);
-
-          if (pedidos.length > 0) {
-            const ids = pedidos.map(p => p.jid);
-            await sock.groupRequestParticipantsUpdate(jid, ids, "approve");
-          }
-
-          await reagir("✅");
-        } catch (e) {
-          console.log("ERRO ACEITAR:", e);
-          await reagir("❌");
-        }
-
-        return;
-      }
-
-      if (comando === ",s") {
-        if (!isAdmin) return reagir("❌");
-
-        for (let i = 1; i <= 8; i++) {
-          await sock.sendMessage(jid, {
-            text:
-`╔══════════════════╗
-      ⚡ 𝗦𝗔𝗡𝗧𝗔𝗡𝗔 𝗕𝗢𝗧 ⚡
-╚══════════════════╝
-
-╭━━〔 🚨 𝗣𝗨𝗫𝗔𝗡𝗗𝗢 𝗦𝗔𝗟𝗔 🚨 〕━━╮
-
-🎮 𝗦𝗮𝗹𝗮 𝗹𝗶𝗯𝗲𝗿𝗮𝗱𝗮!
-📢 𝗥𝗲𝗮𝗴𝗮 𝗮 𝗲𝗻𝗾𝘂𝗲𝘁𝗲!
-🔥 𝗠𝗼𝗱𝗼: X4
-
-⚔️ 𝗣𝗹𝗮𝘆𝗲𝗿𝘀:
-『 ${i}/8 』
-
-╰━━━━━━━━━━━━━━━━━━╯`,
-            mentions
-          });
-
-          await new Promise(resolve => setTimeout(resolve, 1200));
-        }
-
-        await sock.sendMessage(jid, {
-          poll: {
-            name: "🎮 PLAYER ONLINE",
-            values: ["✅ ONLINE", "❌ OFFLINE"],
-            selectableCount: 1
-          }
-        });
-
-        await reagir("✅");
-        return;
-      }
-
-      if (comando.startsWith(",adv")) {
-        if (!isAdmin) return reagir("❌");
-
-        const quoted = getQuoted(msg);
-        let alvo = quoted?.participant;
-
-        if (!alvo && msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.length) {
-          alvo = msg.message.extendedTextMessage.contextInfo.mentionedJid[0];
-        }
-
-        if (!alvo) return reagir("❌");
-
-        const db = carregarDB();
-
-        if (!db.adv[jid]) db.adv[jid] = {};
-        if (!db.adv[jid][alvo]) db.adv[jid][alvo] = 0;
-
-        db.adv[jid][alvo]++;
-        salvarDB(db);
-
-        const total = db.adv[jid][alvo];
-
-        await sock.sendMessage(jid, {
-          text:
-`⚠️ 𝗔𝗗𝗩𝗘𝗥𝗧𝗘̂𝗡𝗖𝗜𝗔 ⚠️
-
-👤 Membro advertido
-
-🚫 Advertências:
-${total}/3
-
-⚡ Ao atingir 3/3 o membro será removido automaticamente.`
-        });
-
-        if (total >= 3) {
-          await sock.groupParticipantsUpdate(jid, [alvo], "remove");
-          db.adv[jid][alvo] = 0;
-          salvarDB(db);
-        }
-
-        await reagir("✅");
-        return;
-      }
-
-      if (comando.startsWith(",tiraradv")) {
-        if (!isAdmin) return reagir("❌");
-
-        const quoted = getQuoted(msg);
-        let alvo = quoted?.participant;
-
-        if (!alvo && msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.length) {
-          alvo = msg.message.extendedTextMessage.contextInfo.mentionedJid[0];
-        }
-
-        if (!alvo) return reagir("❌");
-
-        const db = carregarDB();
-
-        if (!db.adv[jid]) db.adv[jid] = {};
-        if (!db.adv[jid][alvo]) db.adv[jid][alvo] = 0;
-
-        if (db.adv[jid][alvo] > 0) {
-          db.adv[jid][alvo]--;
-        }
-
-        salvarDB(db);
-
-        await sock.sendMessage(jid, {
-          text: "✅ Advertência removida."
-        });
-
-        await reagir("✅");
-        return;
-      }
-
-      if (comando === "d" || comando === ",d") {
-        if (!isAdmin) return reagir("❌");
-
-        const quoted = getQuoted(msg);
-
-        if (!quoted) return reagir("❌");
-
-        try {
-          await sock.sendMessage(jid, {
-            delete: quoted.key
-          });
-
-          await reagir("✅");
-        } catch (e) {
-          console.log("ERRO DELETE:", e);
-          await reagir("❌");
-        }
-
-        return;
-      }
-
-      if (
-        comando === "linkgp" ||
-        comando === ",linkgp" ||
-        comando === "link" ||
-        comando === ",link"
-      ) {
-        if (!isAdmin) return reagir("❌");
-
-        try {
-          const codigo = await sock.groupInviteCode(jid);
-          const link = `https://chat.whatsapp.com/${codigo}`;
-
-          await sock.sendMessage(jid, {
-            text:
-`🚀 𝗘𝗡𝗧𝗥𝗘 𝗡𝗢 𝗚𝗥𝗨𝗣𝗢
-
-📋 𝗟𝗜𝗡𝗞:
-
-${link}
-
-⚡ 𝗦𝗔𝗡𝗧𝗔𝗡𝗔 𝗕𝗢𝗧`
-          });
-
-          await reagir("✅");
-        } catch (e) {
-          console.log("ERRO LINKGP:", e);
-          await reagir("❌");
-        }
-
         return;
       }
 
       if (texto.toLowerCase().startsWith(",play ")) {
         const pesquisa = texto.slice(6).trim();
 
-        if (!pesquisa) {
-          await sock.sendMessage(jid, {
-            text: "❌ Use: ,play nome da música"
-          });
-          return;
-        }
+        if (!pesquisa) return;
 
         try {
           await reagir("🎵");
 
           const resultado = await yts(pesquisa);
+
           const video = resultado.videos[0];
 
           if (!video) {
             await sock.sendMessage(jid, {
               text: "❌ Música não encontrada."
             });
+
             return;
           }
 
@@ -498,17 +256,19 @@ ${link}
             text:
 `🎵 BAIXANDO ÁUDIO...
 
-📌 ${video.title}
-⏱️ ${video.timestamp}`
+📌 ${video.title}`
           });
 
           const resposta = await axios.get(
             `https://youtube-mp36.p.rapidapi.com/dl?id=${video.videoId}`,
             {
               headers: {
-                "Content-Type": "application/json",
-                "x-rapidapi-host": "youtube-mp36.p.rapidapi.com",
-                "x-rapidapi-key": RAPIDAPI_KEY
+                "Content-Type":
+                  "application/json",
+                "x-rapidapi-host":
+                  "youtube-mp36.p.rapidapi.com",
+                "x-rapidapi-key":
+                  RAPIDAPI_KEY
               }
             }
           );
@@ -517,19 +277,22 @@ ${link}
 
           if (!audioUrl) {
             await sock.sendMessage(jid, {
-              text: "❌ API não retornou áudio."
+              text: "❌ API OFFLINE"
             });
+
             return;
           }
 
-          const audioData = await axios.get(audioUrl, {
-            responseType: "arraybuffer",
-            headers: {
-              "User-Agent": "Mozilla/5.0"
+          const audioData = await axios.get(
+            audioUrl,
+            {
+              responseType: "arraybuffer"
             }
-          });
+          );
 
-          const audioBuffer = Buffer.from(audioData.data);
+          const audioBuffer = Buffer.from(
+            audioData.data
+          );
 
           await sock.sendMessage(jid, {
             audio: audioBuffer,
@@ -540,22 +303,13 @@ ${link}
 
           await reagir("✅");
         } catch (e) {
-          const erro =
-            Buffer.isBuffer(e.response?.data)
-              ? e.response.data.toString()
-              : e.response?.data || e.message;
-
-          console.log("ERRO PLAY:", erro);
+          console.log(
+            "ERRO PLAY:",
+            e.response?.data || e.message
+          );
 
           await sock.sendMessage(jid, {
-            text:
-`❌ Erro ao baixar música.
-
-Motivos possíveis:
-- API caiu
-- Link expirou
-- Música bloqueada
-- RapidAPI sem assinatura`
+            text: "❌ Erro ao baixar música."
           });
 
           await reagir("❌");
@@ -573,7 +327,7 @@ Motivos possíveis:
           .replace(",tt", "")
           .trim();
 
-        if (!link) return reagir("❌");
+        if (!link) return;
 
         try {
           await sock.sendMessage(jid, {
@@ -581,18 +335,16 @@ Motivos possíveis:
           });
 
           const resposta = await axios.get(
-            `https://www.tikwm.com/api/?url=${encodeURIComponent(link)}`,
-            {
-              headers: {
-                "Content-Type": "application/json",
-                "x-rapidapi-key": RAPIDAPI_KEY
-              }
-            }
+            `https://www.tikwm.com/api/?url=${encodeURIComponent(link)}`
           );
 
-          const video = resposta.data?.data?.play;
+          const video =
+            resposta.data?.data?.play;
 
-          if (!video) return reagir("❌");
+          if (!video) {
+            await reagir("❌");
+            return;
+          }
 
           await sock.sendMessage(jid, {
             video: {
@@ -604,14 +356,20 @@ Motivos possíveis:
 
           await reagir("✅");
         } catch (e) {
-          console.log("ERRO TIKTOK:", e.response?.data || e.message);
+          console.log(
+            "ERRO TIKTOK:",
+            e.response?.data || e.message
+          );
+
           await reagir("❌");
         }
 
         return;
       }
 
-      if (texto.toLowerCase().startsWith(",add ")) {
+      if (
+        texto.toLowerCase().startsWith(",add ")
+      ) {
         if (!isAdmin) return reagir("❌");
 
         let numero = texto
@@ -619,33 +377,33 @@ Motivos possíveis:
           .replace(/\D/g, "")
           .trim();
 
-        if (!numero) {
-          await sock.sendMessage(jid, {
-            text: "❌ Use assim: ,add 5571999999999"
-          });
-          return;
-        }
-
         if (!numero.startsWith("55")) {
           numero = "55" + numero;
         }
 
-        const alvo = numero + "@s.whatsapp.net";
+        const alvo =
+          numero + "@s.whatsapp.net";
 
         try {
-          await sock.groupParticipantsUpdate(jid, [alvo], "add");
+          await sock.groupParticipantsUpdate(
+            jid,
+            [alvo],
+            "add"
+          );
 
           await sock.sendMessage(jid, {
-            text: `✅ Membro adicionado: ${numero}`
+            text:
+              `✅ Membro adicionado:\n${numero}`
           });
 
           await reagir("✅");
         } catch (e) {
-          console.log("ERRO ADD:", e?.output || e);
-
           try {
-            const codigo = await sock.groupInviteCode(jid);
-            const link = `https://chat.whatsapp.com/${codigo}`;
+            const codigo =
+              await sock.groupInviteCode(jid);
+
+            const link =
+              `https://chat.whatsapp.com/${codigo}`;
 
             await sock.sendMessage(alvo, {
               text:
@@ -656,24 +414,16 @@ ${link}`
 
             await sock.sendMessage(jid, {
               text:
-`⚠️ Não consegui adicionar direto.
+`⚠️ Não consegui adicionar.
 
-✅ Enviei o link no privado para:
-${numero}`
+✅ Link enviado no privado.`
             });
 
             await reagir("✅");
           } catch (err) {
-            console.log("ERRO ENVIAR LINK:", err);
-
             await sock.sendMessage(jid, {
               text:
-`❌ Não consegui adicionar nem enviar o link.
-
-Verifique:
-- número correto
-- bot é admin
-- pessoa permite receber mensagem`
+`❌ Não consegui adicionar nem enviar link.`
             });
 
             await reagir("❌");
@@ -684,36 +434,25 @@ Verifique:
       }
 
       if (comando === ",menuadm") {
-        if (!isAdmin) return reagir("❌");
+        if (!isAdmin) return;
 
         await sock.sendMessage(sender, {
           text:
-`🤖 MENU ADM 🤖
+`🤖 MENU ADM
 
 🔓 a / ,a
 🔒 f / ,f
-
 📢 t / totag
 
-🎵 ,play nome da música
-📥 ,tiktok link
-📥 ,tt link
-
-➕ ,add número
+🎵 ,play
+📥 ,tiktok
+➕ ,add
 
 🚫 ,ban
 📥 ,aceitar
-
-🚨 ,s
-
-⚠️ ,adv
-🧹 ,tiraradv
-
-🗑️ d / ,d
-🔗 ,linkgp`
+🗑️ d / ,d`
         });
 
-        await reagir("✅");
         return;
       }
 
