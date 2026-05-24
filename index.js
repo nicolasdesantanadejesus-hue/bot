@@ -4,6 +4,8 @@ const {
   DisconnectReason,
   downloadMediaMessage
 } = require("@whiskeysockets/baileys");
+
+const { Sticker, StickerTypes } = require("wa-sticker-formatter");
 const qrcode = require("qrcode-terminal");
 const P = require("pino");
 const fs = require("fs");
@@ -81,33 +83,52 @@ function getQuoted(msg) {
   };
 }
 
-const sock = makeWASocket({
-  auth: state,
-  logger: P({ level: "silent" }),
-  browser: ["SANTANA BOT", "Chrome", "1.0"],
-  printQRInTerminal: false
+async function iniciarBot() {
+  const { state, saveCreds } = await useMultiFileAuthState("sessao");
+
+  const sock = makeWASocket({
+    auth: state,
+    logger: P({ level: "silent" }),
+    browser: ["SANTANA BOT", "Chrome", "1.0"]
+  });
+
+  sock.ev.on("creds.update", saveCreds);
+
+  sock.ev.on("connection.update", async update => {
+  const { connection, qr, lastDisconnect } = update;
+
+  if (qr) {
+    console.log("📱 QR gerado, mas use o código de pareamento.");
+  }
+
+  if (connection === "connecting") {
+    if (!sock.authState.creds.registered) {
+      try {
+        const numero = "5571996355153";
+        const code = await sock.requestPairingCode(numero);
+
+        console.log("================================");
+        console.log("CÓDIGO DO BOT:", code);
+        console.log("================================");
+      } catch (e) {
+        console.log("ERRO PAIRING:", e.message);
+      }
+    }
+  }
+
+  if (connection === "open") {
+    console.log("✅ SANTANA BOT ONLINE!");
+  }
+
+  if (connection === "close") {
+    const code = lastDisconnect?.error?.output?.statusCode;
+    console.log("❌ Conexão fechada:", code);
+
+    if (code !== DisconnectReason.loggedOut) {
+      iniciarBot();
+    }
+  }
 });
-
-if (!sock.authState.creds.registered) {
-  const numero = "5571996355153";
-  const code = await sock.requestPairingCode(numero);
-
-  console.log("CÓDIGO DO BOT:", code);
-}
-// AQUI EMBAIXO 👇
-if (!sock.authState.creds.registered) {
-
-  const numero = "557199125198";
-
-  const code = await sock.requestPairingCode(numero);
-
-  console.log(`
-╔════════════════════╗
-   CÓDIGO DO BOT
-      ${code}
-╚════════════════════╝
-`);
-}
 
   sock.ev.on("messages.upsert", async ({ messages }) => {
     try {
@@ -520,78 +541,71 @@ ${link}
       }
 
       // PLAY LIBERADO PARA MEMBROS
-if (texto.toLowerCase().startsWith(",play ")) {
-  const pesquisa = texto.slice(6).trim();
+      if (texto.toLowerCase().startsWith(",play ")) {
+        const pesquisa = texto.slice(6).trim();
 
-  if (!pesquisa) return reagir("❌");
+        if (!pesquisa) return reagir("❌");
 
-  try {
-    const resultado = await yts(pesquisa);
-    const video = resultado.videos[0];
+        try {
+          const resultado = await yts(pesquisa);
+          const video = resultado.videos[0];
 
-    if (!video) return reagir("❌");
+          if (!video) return reagir("❌");
 
-    await sock.sendMessage(jid, {
-      text:
+          await sock.sendMessage(jid, {
+            text:
 `🎵 BAIXANDO ÁUDIO...
 
 🎧 ${video.title}`
-    });
+          });
 
-    const resposta = await axios.get(
-      `https://youtube-mp36.p.rapidapi.com/dl?id=${video.videoId}`,
-      {
-        headers: {
-          "Content-Type": "application/json",
-          "x-rapidapi-host": "youtube-mp36.p.rapidapi.com",
-          "x-rapidapi-key": RAPIDAPI_KEY
-        }
-      }
-    );
+          const resposta = await axios.get(
+            `https://youtube-mp36.p.rapidapi.com/dl?id=${video.videoId}`,
+            {
+              headers: {
+                "Content-Type": "application/json",
+                "x-rapidapi-host": "youtube-mp36.p.rapidapi.com",
+                "x-rapidapi-key": RAPIDAPI_KEY
+              }
+            }
+          );
 
-    const audioUrl = resposta.data?.link;
+          const audioUrl = resposta.data?.link;
 
-    if (!audioUrl) {
-      await sock.sendMessage(jid, {
-        text: "❌ API de áudio indisponível no momento."
-      });
+          if (!audioUrl) {
+            await sock.sendMessage(jid, {
+              text: "❌ API de áudio indisponível no momento."
+            });
 
-      await reagir("❌");
-      return;
-    }
+            await reagir("❌");
+            return;
+          }
 
-    const audioData = await axios.get(audioUrl, {
-      responseType: "arraybuffer",
-      headers: {
-        "User-Agent": "Mozilla/5.0"
-      }
-    });
+          await sock.sendMessage(jid, {
+            audio: {
+              url: audioUrl
+            },
+            mimetype: "audio/mpeg",
+            ptt: false,
+            fileName: `${video.title}.mp3`
+          });
 
-    const audioBuffer = Buffer.from(audioData.data);
+          await reagir("✅");
+        } catch (e) {
+          console.log("ERRO PLAY:", e.response?.data || e.message);
 
-    await sock.sendMessage(jid, {
-      audio: audioBuffer,
-      mimetype: "audio/mpeg",
-      ptt: false,
-      fileName: `${video.title}.mp3`
-    });
-
-    await reagir("✅");
-  } catch (e) {
-    console.log("ERRO PLAY:", e.response?.data || e.message);
-
-    await sock.sendMessage(jid, {
-      text:
+          await sock.sendMessage(jid, {
+            text:
 `❌ Erro ao baixar música.
 
-A API pode estar bloqueando o áudio ou o link expirou.`
-    });
+Se aparecer "You are not subscribed to this API", sua RapidAPI não está liberada.`
+          });
 
-    await reagir("❌");
-  }
+          await reagir("❌");
+        }
 
-  return;
-}
+        return;
+      }
 
       // TIKTOK LIBERADO PARA MEMBROS
       if (
@@ -641,11 +655,11 @@ A API pode estar bloqueando o áudio ou o link expirou.`
         return;
       }
 
-// ADD MEMBRO OU ENVIA LINK SE FALHAR
+// ADD MEMBRO
 if (texto.toLowerCase().startsWith(",add ")) {
   if (!isAdmin) return reagir("❌");
 
-  let numero = texto
+  const numero = texto
     .replace(",add", "")
     .replace(/\D/g, "")
     .trim();
@@ -655,10 +669,6 @@ if (texto.toLowerCase().startsWith(",add ")) {
       text: "❌ Use assim: ,add 5571999999999"
     });
     return;
-  }
-
-  if (!numero.startsWith("55")) {
-    numero = "55" + numero;
   }
 
   const alvo = numero + "@s.whatsapp.net";
@@ -672,47 +682,18 @@ if (texto.toLowerCase().startsWith(",add ")) {
 
     await reagir("✅");
   } catch (e) {
-    console.log("ERRO ADD:", e?.output || e);
+    console.log("ERRO ADD:", e);
 
-    try {
-      const codigo = await sock.groupInviteCode(jid);
-      const link = `https://chat.whatsapp.com/${codigo}`;
+    await sock.sendMessage(jid, {
+      text: "❌ Não consegui adicionar. A pessoa pode ter privacidade ativada ou o número está errado."
+    });
 
-      await sock.sendMessage(alvo, {
-        text:
-`👋 Você foi convidado para entrar no grupo:
-
-${link}`
-      });
-
-      await sock.sendMessage(jid, {
-        text:
-`⚠️ Não consegui adicionar direto.
-
-✅ Enviei o link do grupo no privado para:
-${numero}`
-      });
-
-      await reagir("✅");
-    } catch (err) {
-      console.log("ERRO ENVIAR LINK:", err);
-
-      await sock.sendMessage(jid, {
-        text:
-`❌ Não consegui adicionar nem enviar o link.
-
-Verifique:
-- número correto
-- bot é admin
-- pessoa permite receber mensagem`
-      });
-
-      await reagir("❌");
-    }
+    await reagir("❌");
   }
 
   return;
 }
+
       if (comando === ",menuadm") {
         if (!isAdmin) return reagir("❌");
 
