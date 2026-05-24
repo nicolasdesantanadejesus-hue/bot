@@ -22,8 +22,7 @@ app.listen(process.env.PORT || 3000, () => {
   console.log("🌐 WEB ONLINE");
 });
 
-const RAPIDAPI_KEY =
-  process.env.RAPIDAPI_KEY || "SUA_KEY_AQUI";
+const RAPIDAPI_KEY = "b8b7b39029msh1305aa17e245991p1dc47ajsn5b5e84453827";
 
 const GRUPOS_PERMITIDOS = [
   "Os cria",
@@ -34,10 +33,7 @@ const DB_FILE = "./database.json";
 
 function carregarDB() {
   if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(
-      DB_FILE,
-      JSON.stringify({ adv: {} }, null, 2)
-    );
+    fs.writeFileSync(DB_FILE, JSON.stringify({ adv: {} }, null, 2));
   }
 
   return JSON.parse(fs.readFileSync(DB_FILE));
@@ -58,8 +54,7 @@ function textoMsg(msg) {
 }
 
 function getQuoted(msg) {
-  const ctx =
-    msg.message?.extendedTextMessage?.contextInfo;
+  const ctx = msg.message?.extendedTextMessage?.contextInfo;
 
   if (!ctx?.quotedMessage) return null;
 
@@ -76,8 +71,7 @@ function getQuoted(msg) {
 }
 
 async function iniciarBot() {
-  const { state, saveCreds } =
-    await useMultiFileAuthState("sessao");
+  const { state, saveCreds } = await useMultiFileAuthState("sessao");
 
   const sock = makeWASocket({
     auth: state,
@@ -105,8 +99,7 @@ async function iniciarBot() {
     }
 
     if (connection === "close") {
-      const statusCode =
-        lastDisconnect?.error?.output?.statusCode;
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
 
       console.log("❌ Conexão fechada:", statusCode);
 
@@ -129,33 +122,22 @@ async function iniciarBot() {
       if (!jid.endsWith("@g.us")) return;
 
       const sender = msg.key.participant || jid;
-
       const texto = textoMsg(msg);
-
-      const comando = texto
-        .split(" ")[0]
-        .toLowerCase();
+      const comando = texto.split(" ")[0].toLowerCase();
 
       const meta = await sock.groupMetadata(jid);
+      const nomeGrupo = meta.subject.trim().toLowerCase();
 
-      const nomeGrupo =
-        meta.subject.trim().toLowerCase();
+      const gruposPermitidos = GRUPOS_PERMITIDOS.map(g =>
+        g.trim().toLowerCase()
+      );
 
-      const gruposPermitidos =
-        GRUPOS_PERMITIDOS.map(g =>
-          g.trim().toLowerCase()
-        );
-
-      if (!gruposPermitidos.includes(nomeGrupo))
-        return;
+      if (!gruposPermitidos.includes(nomeGrupo)) return;
 
       const participants = meta.participants;
-
       const mentions = participants.map(p => p.id);
 
-      const membro = participants.find(
-        p => p.id === sender
-      );
+      const membro = participants.find(p => p.id === sender);
 
       const isAdmin =
         membro?.admin === "admin" ||
@@ -173,11 +155,7 @@ async function iniciarBot() {
       if (comando === "a" || comando === ",a") {
         if (!isAdmin) return reagir("❌");
 
-        await sock.groupSettingUpdate(
-          jid,
-          "not_announcement"
-        );
-
+        await sock.groupSettingUpdate(jid, "not_announcement");
         await reagir("✅");
         return;
       }
@@ -185,19 +163,12 @@ async function iniciarBot() {
       if (comando === "f" || comando === ",f") {
         if (!isAdmin) return reagir("❌");
 
-        await sock.groupSettingUpdate(
-          jid,
-          "announcement"
-        );
-
+        await sock.groupSettingUpdate(jid, "announcement");
         await reagir("✅");
         return;
       }
 
-      if (
-        comando === "t" ||
-        comando === "totag"
-      ) {
+      if (comando === "t" || comando === "totag") {
         if (!isAdmin) return reagir("❌");
 
         const quoted = getQuoted(msg);
@@ -208,22 +179,42 @@ async function iniciarBot() {
             mentions
           });
 
+          await reagir("✅");
           return;
         }
 
         const q = quoted.message;
 
-        if (
-          q.conversation ||
-          q.extendedTextMessage
-        ) {
-          const txt =
-            q.conversation ||
-            q.extendedTextMessage.text ||
-            "";
+        if (q.conversation || q.extendedTextMessage) {
+          const txt = q.conversation || q.extendedTextMessage.text || "";
 
           await sock.sendMessage(jid, {
             text: txt,
+            mentions
+          });
+        } else if (q.imageMessage) {
+          const buffer = await downloadMediaMessage(quoted, "buffer", {});
+
+          await sock.sendMessage(jid, {
+            image: buffer,
+            caption: q.imageMessage.caption || "",
+            mentions
+          });
+        } else if (q.videoMessage) {
+          const buffer = await downloadMediaMessage(quoted, "buffer", {});
+
+          await sock.sendMessage(jid, {
+            video: buffer,
+            caption: q.videoMessage.caption || "",
+            mentions
+          });
+        } else if (q.audioMessage) {
+          const buffer = await downloadMediaMessage(quoted, "buffer", {});
+
+          await sock.sendMessage(jid, {
+            audio: buffer,
+            mimetype: "audio/mp4",
+            ptt: q.audioMessage.ptt || false,
             mentions
           });
         }
@@ -241,7 +232,6 @@ async function iniciarBot() {
           await reagir("🎵");
 
           const resultado = await yts(pesquisa);
-
           const video = resultado.videos[0];
 
           if (!video) {
@@ -254,21 +244,30 @@ async function iniciarBot() {
 
           await sock.sendMessage(jid, {
             text:
-`🎵 BAIXANDO ÁUDIO...
+`╔══════════════════╗
+      🎵 SANTANA PLAY 🎵
+╚══════════════════╝
 
-📌 ${video.title}`
+⏳ BAIXANDO ÁUDIO...
+
+📌 ${video.title}
+
+👀 Canal:
+${video.author.name}
+
+⏱️ Duração:
+${video.timestamp}
+
+🔥 Aguarde alguns segundos...`
           });
 
           const resposta = await axios.get(
             `https://youtube-mp36.p.rapidapi.com/dl?id=${video.videoId}`,
             {
               headers: {
-                "Content-Type":
-                  "application/json",
-                "x-rapidapi-host":
-                  "youtube-mp36.p.rapidapi.com",
-                "x-rapidapi-key":
-                  RAPIDAPI_KEY
+                "Content-Type": "application/json",
+                "x-rapidapi-host": "youtube-mp36.p.rapidapi.com",
+                "x-rapidapi-key": RAPIDAPI_KEY
               }
             }
           );
@@ -283,16 +282,14 @@ async function iniciarBot() {
             return;
           }
 
-          const audioData = await axios.get(
-            audioUrl,
-            {
-              responseType: "arraybuffer"
+          const audioData = await axios.get(audioUrl, {
+            responseType: "arraybuffer",
+            headers: {
+              "User-Agent": "Mozilla/5.0"
             }
-          );
+          });
 
-          const audioBuffer = Buffer.from(
-            audioData.data
-          );
+          const audioBuffer = Buffer.from(audioData.data);
 
           await sock.sendMessage(jid, {
             audio: audioBuffer,
@@ -303,13 +300,15 @@ async function iniciarBot() {
 
           await reagir("✅");
         } catch (e) {
-          console.log(
-            "ERRO PLAY:",
-            e.response?.data || e.message
-          );
+          console.log("ERRO PLAY:", e.response?.data || e.message);
 
           await sock.sendMessage(jid, {
-            text: "❌ Erro ao baixar música."
+            text:
+`╔══════════════════╗
+❌ ERRO AO BAIXAR
+╚══════════════════╝
+
+⚠️ Verifique se a API está assinada na RapidAPI.`
           });
 
           await reagir("❌");
@@ -338,8 +337,7 @@ async function iniciarBot() {
             `https://www.tikwm.com/api/?url=${encodeURIComponent(link)}`
           );
 
-          const video =
-            resposta.data?.data?.play;
+          const video = resposta.data?.data?.play;
 
           if (!video) {
             await reagir("❌");
@@ -356,20 +354,14 @@ async function iniciarBot() {
 
           await reagir("✅");
         } catch (e) {
-          console.log(
-            "ERRO TIKTOK:",
-            e.response?.data || e.message
-          );
-
+          console.log("ERRO TIKTOK:", e.response?.data || e.message);
           await reagir("❌");
         }
 
         return;
       }
 
-      if (
-        texto.toLowerCase().startsWith(",add ")
-      ) {
+      if (texto.toLowerCase().startsWith(",add ")) {
         if (!isAdmin) return reagir("❌");
 
         let numero = texto
@@ -377,33 +369,31 @@ async function iniciarBot() {
           .replace(/\D/g, "")
           .trim();
 
+        if (!numero) {
+          await sock.sendMessage(jid, {
+            text: "❌ Use assim: ,add 5571999999999"
+          });
+          return;
+        }
+
         if (!numero.startsWith("55")) {
           numero = "55" + numero;
         }
 
-        const alvo =
-          numero + "@s.whatsapp.net";
+        const alvo = numero + "@s.whatsapp.net";
 
         try {
-          await sock.groupParticipantsUpdate(
-            jid,
-            [alvo],
-            "add"
-          );
+          await sock.groupParticipantsUpdate(jid, [alvo], "add");
 
           await sock.sendMessage(jid, {
-            text:
-              `✅ Membro adicionado:\n${numero}`
+            text: `✅ Membro adicionado:\n${numero}`
           });
 
           await reagir("✅");
         } catch (e) {
           try {
-            const codigo =
-              await sock.groupInviteCode(jid);
-
-            const link =
-              `https://chat.whatsapp.com/${codigo}`;
+            const codigo = await sock.groupInviteCode(jid);
+            const link = `https://chat.whatsapp.com/${codigo}`;
 
             await sock.sendMessage(alvo, {
               text:
@@ -414,7 +404,7 @@ ${link}`
 
             await sock.sendMessage(jid, {
               text:
-`⚠️ Não consegui adicionar.
+`⚠️ Não consegui adicionar direto.
 
 ✅ Link enviado no privado.`
             });
@@ -422,8 +412,7 @@ ${link}`
             await reagir("✅");
           } catch (err) {
             await sock.sendMessage(jid, {
-              text:
-`❌ Não consegui adicionar nem enviar link.`
+              text: "❌ Não consegui adicionar nem enviar link."
             });
 
             await reagir("❌");
@@ -444,9 +433,10 @@ ${link}`
 🔒 f / ,f
 📢 t / totag
 
-🎵 ,play
-📥 ,tiktok
-➕ ,add
+🎵 ,play nome da música
+📥 ,tiktok link
+📥 ,tt link
+➕ ,add número
 
 🚫 ,ban
 📥 ,aceitar
@@ -455,7 +445,6 @@ ${link}`
 
         return;
       }
-
     } catch (err) {
       console.log("❌ ERRO:", err);
     }
