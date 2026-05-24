@@ -4,8 +4,6 @@ const {
   DisconnectReason,
   downloadMediaMessage
 } = require("@whiskeysockets/baileys");
-
-const { Sticker, StickerTypes } = require("wa-sticker-formatter");
 const qrcode = require("qrcode-terminal");
 const P = require("pino");
 const fs = require("fs");
