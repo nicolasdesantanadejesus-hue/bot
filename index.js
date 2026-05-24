@@ -21,10 +21,7 @@ app.listen(process.env.PORT || 3000, () => {
   console.log("🌐 WEB ONLINE");
 });
 
-const RAPIDAPI_KEY =
-  process.env.RAPIDAPI_KEY ||
-  "b8b7b39029msh1305aa17e245991p1dc47ajsn5b5e84453827";
-
+const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || "SUA_KEY_AQUI";
 const NUMERO_PAIRING = "5571996355153";
 
 const GRUPOS_PERMITIDOS = [
@@ -38,7 +35,6 @@ function carregarDB() {
   if (!fs.existsSync(DB_FILE)) {
     fs.writeFileSync(DB_FILE, JSON.stringify({ adv: {} }, null, 2));
   }
-
   return JSON.parse(fs.readFileSync(DB_FILE));
 }
 
@@ -75,13 +71,11 @@ function temLinkOuStatus(texto, msg) {
     msg.message?.protocolMessage?.type === 25;
 
   if (linkLiberado) return temMencaoStatus;
-
   return temLink || temMencaoStatus;
 }
 
 function getQuoted(msg) {
   const ctx = msg.message?.extendedTextMessage?.contextInfo;
-
   if (!ctx?.quotedMessage) return null;
 
   return {
@@ -111,25 +105,25 @@ async function iniciarBot() {
   sock.ev.on("creds.update", saveCreds);
 
   sock.ev.on("connection.update", async update => {
-    const { connection, qr, lastDisconnect } = update;
-
-    if (qr) {
-      console.log("📱 QR gerado, mas use o código de pareamento.");
-    }
+    const { connection, lastDisconnect } = update;
 
     if (connection === "connecting") {
+      console.log("🔄 CONECTANDO...");
+
       if (!sock.authState.creds.registered && !pairingRequested) {
         pairingRequested = true;
 
-        try {
-          const code = await sock.requestPairingCode(NUMERO_PAIRING);
+        setTimeout(async () => {
+          try {
+            const code = await sock.requestPairingCode(NUMERO_PAIRING);
 
-          console.log("================================");
-          console.log("CÓDIGO DO BOT:", code);
-          console.log("================================");
-        } catch (e) {
-          console.log("ERRO PAIRING:", e.message);
-        }
+            console.log("================================");
+            console.log("CÓDIGO DO BOT:", code);
+            console.log("================================");
+          } catch (e) {
+            console.log("ERRO PAIRING:", e.message);
+          }
+        }, 3000);
       }
     }
 
@@ -138,13 +132,13 @@ async function iniciarBot() {
     }
 
     if (connection === "close") {
-      const code = lastDisconnect?.error?.output?.statusCode;
-      console.log("❌ Conexão fechada:", code);
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      console.log("❌ Conexão fechada:", statusCode);
 
-      if (code !== DisconnectReason.loggedOut) {
+      if (statusCode !== 428 && statusCode !== 401 && statusCode !== DisconnectReason.loggedOut) {
         setTimeout(() => {
           iniciarBot();
-        }, 5000);
+        }, 10000);
       }
     }
   });
@@ -152,11 +146,9 @@ async function iniciarBot() {
   sock.ev.on("messages.upsert", async ({ messages }) => {
     try {
       const msg = messages[0];
-
       if (!msg.message) return;
 
       const jid = msg.key.remoteJid;
-
       if (!jid.endsWith("@g.us")) return;
 
       const sender = msg.key.participant || jid;
@@ -209,7 +201,6 @@ async function iniciarBot() {
 
       if (comando === "a" || comando === ",a") {
         if (!isAdmin) return reagir("❌");
-
         await sock.groupSettingUpdate(jid, "not_announcement");
         await reagir("✅");
         return;
@@ -217,7 +208,6 @@ async function iniciarBot() {
 
       if (comando === "f" || comando === ",f") {
         if (!isAdmin) return reagir("❌");
-
         await sock.groupSettingUpdate(jid, "announcement");
         await reagir("✅");
         return;
@@ -389,7 +379,6 @@ ${total}/3
 
         if (total >= 3) {
           await sock.groupParticipantsUpdate(jid, [alvo], "remove");
-
           db.adv[jid][alvo] = 0;
           salvarDB(db);
         }
@@ -462,10 +451,8 @@ ${total}/3
           const codigo = await sock.groupInviteCode(jid);
           const link = `https://chat.whatsapp.com/${codigo}`;
 
-          if (fs.existsSync("./grupo.jpg")) {
-            await sock.sendMessage(jid, {
-              image: fs.readFileSync("./grupo.jpg"),
-              caption:
+          await sock.sendMessage(jid, {
+            text:
 `🚀 𝗘𝗡𝗧𝗥𝗘 𝗡𝗢 𝗚𝗥𝗨𝗣𝗢
 
 📋 𝗟𝗜𝗡𝗞:
@@ -473,19 +460,7 @@ ${total}/3
 ${link}
 
 ⚡ 𝗦𝗔𝗡𝗧𝗔𝗡𝗔 𝗕𝗢𝗧`
-            });
-          } else {
-            await sock.sendMessage(jid, {
-              text:
-`🚀 𝗘𝗡𝗧𝗥𝗘 𝗡𝗢 𝗚𝗥𝗨𝗣𝗢
-
-📋 𝗟𝗜𝗡𝗞:
-
-${link}
-
-⚡ 𝗦𝗔𝗡𝗧𝗔𝗡𝗔 𝗕𝗢𝗧`
-            });
-          }
+          });
 
           await reagir("✅");
         } catch (e) {
@@ -516,7 +491,6 @@ ${link}
             await sock.sendMessage(jid, {
               text: "❌ Música não encontrada."
             });
-
             return;
           }
 
@@ -545,7 +519,6 @@ ${link}
             await sock.sendMessage(jid, {
               text: "❌ API não retornou áudio."
             });
-
             return;
           }
 
@@ -566,7 +539,6 @@ ${link}
           });
 
           await reagir("✅");
-
         } catch (e) {
           const erro =
             Buffer.isBuffer(e.response?.data)
